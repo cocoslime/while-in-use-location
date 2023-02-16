@@ -280,11 +280,16 @@ class ForegroundOnlyLocationService : Service() {
         val cancelIntent = Intent(this, ForegroundOnlyLocationService::class.java)
         cancelIntent.putExtra(EXTRA_CANCEL_LOCATION_TRACKING_FROM_NOTIFICATION, true)
 
-        val servicePendingIntent = PendingIntent.getService(
-            this, 0, cancelIntent, PendingIntent.FLAG_UPDATE_CURRENT)
+        val servicePendingIntent =  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            PendingIntent.getService(
+                this, 0, cancelIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        } else {
+            PendingIntent.getService(
+                this, 0, cancelIntent, PendingIntent.FLAG_UPDATE_CURRENT)
+        }
 
         val activityPendingIntent = PendingIntent.getActivity(
-            this, 0, launchActivityIntent, 0)
+            this, 0, launchActivityIntent, PendingIntent.FLAG_IMMUTABLE)
 
         // 4. Build and issue the notification.
         // Notification Channel Id is ignored for Android pre O (26).
