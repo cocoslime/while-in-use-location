@@ -123,7 +123,7 @@ class ForegroundOnlyLocationService : Service() {
                 // learning the location side of things.
                 val intent = Intent(ACTION_FOREGROUND_ONLY_LOCATION_BROADCAST)
                 intent.putExtra(EXTRA_LOCATION, currentLocation)
-                LocalBroadcastManager.getInstance(applicationContext).sendBroadcast(intent)
+                applicationContext.sendBroadcast(intent)
 
                 // Updates notification content if this service is running as a foreground
                 // service.
