@@ -1,13 +1,9 @@
-While-in-use Location Codelab Repository
+LocationSample
 ===============================
 
-This repository is to be used with the while-in-use location codelab:
-https://developers.google.com/codelabs/while-in-use-location
+[while-in-use location codelab](https://developers.google.com/codelabs/while-in-use-location) 를 기반으로 만들어진 샘플 프로젝트 입니다.
 
-It teaches you how to handle new location permissions added in Android 10.
-
-Documentation on while-in-use location:
-https://developer.android.com/preview/privacy/device-location
+앱이 백그라운드 상태가 될 경우, 포그라운드 서비스를 시작해서 위치 정보를 계속 받아옵니다.
 
 License
 -------

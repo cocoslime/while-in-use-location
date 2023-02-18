@@ -90,8 +90,6 @@ class MainActivity : AppCompatActivity(), SharedPreferences.OnSharedPreferenceCh
     // Listens for location broadcasts from ForegroundOnlyLocationService.
     private lateinit var foregroundOnlyBroadcastReceiver: ForegroundOnlyBroadcastReceiver
 
-    private lateinit var sharedPreferences: SharedPreferences
-
     private lateinit var foregroundOnlyLocationButton: Button
 
     private lateinit var outputTextView: TextView
@@ -115,43 +113,22 @@ class MainActivity : AppCompatActivity(), SharedPreferences.OnSharedPreferenceCh
         super.onCreate(savedInstanceState)
 
         setContentView(R.layout.activity_main)
-
         foregroundOnlyBroadcastReceiver = ForegroundOnlyBroadcastReceiver()
-
-        sharedPreferences =
-            getSharedPreferences(getString(R.string.preference_file_key), Context.MODE_PRIVATE)
-
-        foregroundOnlyLocationButton = findViewById(R.id.foreground_only_location_button)
         outputTextView = findViewById(R.id.output_text_view)
-
-        foregroundOnlyLocationButton.setOnClickListener {
-            val enabled = sharedPreferences.getBoolean(
-                SharedPreferenceUtil.KEY_FOREGROUND_ENABLED, false)
-
-            if (enabled) {
-                foregroundOnlyLocationService?.unsubscribeToLocationUpdates()
-            } else {
-                // TODO: Step 1.0, Review Permissions: Checks and requests if needed.
-                if (foregroundPermissionApproved()) {
-                    foregroundOnlyLocationService?.subscribeToLocationUpdates()
-                        ?: Log.d(TAG, "Service Not Bound")
-                } else {
-                    requestForegroundPermissions()
-                }
-            }
-        }
     }
 
     override fun onStart() {
         super.onStart()
 
-        updateButtonState(
-            sharedPreferences.getBoolean(SharedPreferenceUtil.KEY_FOREGROUND_ENABLED, false)
-        )
-        sharedPreferences.registerOnSharedPreferenceChangeListener(this)
-
         val serviceIntent = Intent(this, ForegroundOnlyLocationService::class.java)
         bindService(serviceIntent, foregroundOnlyServiceConnection, Context.BIND_AUTO_CREATE)
+
+        if (foregroundPermissionApproved()) {
+            foregroundOnlyLocationService?.subscribeToLocationUpdates()
+                ?: Log.d(TAG, "Service Not Bound")
+        } else {
+            requestForegroundPermissions()
+        }
     }
 
     override fun onResume() {
@@ -175,7 +152,6 @@ class MainActivity : AppCompatActivity(), SharedPreferences.OnSharedPreferenceCh
             unbindService(foregroundOnlyServiceConnection)
             foregroundOnlyLocationServiceBound = false
         }
-        sharedPreferences.unregisterOnSharedPreferenceChangeListener(this)
 
         super.onStop()
     }
