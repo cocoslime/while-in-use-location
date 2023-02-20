@@ -16,25 +16,19 @@
 package com.example.android.whileinuselocation
 
 import android.Manifest
-import android.content.BroadcastReceiver
-import android.content.ComponentName
-import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
-import android.content.ServiceConnection
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
-import android.location.Location
 import android.net.Uri
 import android.os.Bundle
-import android.os.IBinder
 import android.provider.Settings
 import android.util.Log
-import android.widget.Button
-import android.widget.TextView
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
-import androidx.localbroadcastmanager.content.LocalBroadcastManager
+import androidx.core.content.ContextCompat
+import com.example.android.whileinuselocation.ForegroundOnlyLocationService.Companion.ACTION_CANCEL_LOCATION_TRACKING_FROM_NOTIFICATION
+import com.example.android.whileinuselocation.ForegroundOnlyLocationService.Companion.ACTION_START_FOREGROUND
 import com.google.android.material.snackbar.Snackbar
 
 private const val TAG = "MainActivity"
@@ -82,76 +76,45 @@ private const val REQUEST_FOREGROUND_ONLY_PERMISSIONS_REQUEST_CODE = 34
  * notification. This dismisses the notification and stops the service.
  */
 class MainActivity : AppCompatActivity(), SharedPreferences.OnSharedPreferenceChangeListener {
-    private var foregroundOnlyLocationServiceBound = false
+    private var hasPermission = false
 
-    // Provides location updates for while-in-use feature.
-    private var foregroundOnlyLocationService: ForegroundOnlyLocationService? = null
-
-    // Listens for location broadcasts from ForegroundOnlyLocationService.
-    private lateinit var foregroundOnlyBroadcastReceiver: ForegroundOnlyBroadcastReceiver
-
-    private lateinit var foregroundOnlyLocationButton: Button
-
-    private lateinit var outputTextView: TextView
-
-    // Monitors connection to the while-in-use service.
-    private val foregroundOnlyServiceConnection = object : ServiceConnection {
-
-        override fun onServiceConnected(name: ComponentName, service: IBinder) {
-            val binder = service as ForegroundOnlyLocationService.LocalBinder
-            foregroundOnlyLocationService = binder.service
-            foregroundOnlyLocationServiceBound = true
-        }
-
-        override fun onServiceDisconnected(name: ComponentName) {
-            foregroundOnlyLocationService = null
-            foregroundOnlyLocationServiceBound = false
-        }
-    }
+    private val permissions = arrayOf(
+        Manifest.permission.ACCESS_FINE_LOCATION,
+        Manifest.permission.ACCESS_COARSE_LOCATION
+    )
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         setContentView(R.layout.activity_main)
-        foregroundOnlyBroadcastReceiver = ForegroundOnlyBroadcastReceiver()
-        outputTextView = findViewById(R.id.output_text_view)
+
+        initPermission()
     }
 
     override fun onStart() {
         super.onStart()
 
-        val serviceIntent = Intent(this, ForegroundOnlyLocationService::class.java)
-        bindService(serviceIntent, foregroundOnlyServiceConnection, Context.BIND_AUTO_CREATE)
-
-        if (foregroundPermissionApproved()) {
-            foregroundOnlyLocationService?.subscribeToLocationUpdates()
-                ?: Log.d(TAG, "Service Not Bound")
-        } else {
-            requestForegroundPermissions()
+        if (permissionApproved()) {
+            hasPermission = true
         }
+
+        val intent = Intent(applicationContext, ForegroundOnlyLocationService::class.java)
+        intent.action = ACTION_CANCEL_LOCATION_TRACKING_FROM_NOTIFICATION
+        startService(intent)
     }
 
     override fun onResume() {
         super.onResume()
-        applicationContext.registerReceiver(
-            foregroundOnlyBroadcastReceiver,
-            IntentFilter(
-                ForegroundOnlyLocationService.ACTION_FOREGROUND_ONLY_LOCATION_BROADCAST)
-        )
     }
 
     override fun onPause() {
-        applicationContext.unregisterReceiver(
-            foregroundOnlyBroadcastReceiver
-        )
         super.onPause()
     }
 
     override fun onStop() {
-        if (foregroundOnlyLocationServiceBound) {
-            unbindService(foregroundOnlyServiceConnection)
-            foregroundOnlyLocationServiceBound = false
-        }
+        val intent = Intent(applicationContext, ForegroundOnlyLocationService::class.java)
+        intent.action = ACTION_START_FOREGROUND
+        startService(intent)
 
         super.onStop()
     }
@@ -159,123 +122,76 @@ class MainActivity : AppCompatActivity(), SharedPreferences.OnSharedPreferenceCh
     override fun onSharedPreferenceChanged(sharedPreferences: SharedPreferences, key: String) {
         // Updates button states if new while in use location is added to SharedPreferences.
         if (key == SharedPreferenceUtil.KEY_FOREGROUND_ENABLED) {
-            updateButtonState(sharedPreferences.getBoolean(
+            sharedPreferences.getBoolean(
                 SharedPreferenceUtil.KEY_FOREGROUND_ENABLED, false)
-            )
         }
     }
 
-    // TODO: Step 1.0, Review Permissions: Method checks if permissions approved.
-    private fun foregroundPermissionApproved(): Boolean {
-        return PackageManager.PERMISSION_GRANTED == ActivityCompat.checkSelfPermission(
-            this,
-            Manifest.permission.ACCESS_FINE_LOCATION
-        )
-    }
-
-    // TODO: Step 1.0, Review Permissions: Method requests permissions.
-    private fun requestForegroundPermissions() {
-        val provideRationale = foregroundPermissionApproved()
-
-        // If the user denied a previous request, but didn't check "Don't ask again", provide
-        // additional rationale.
-        if (provideRationale) {
-            Snackbar.make(
-                findViewById(R.id.activity_main),
-                R.string.permission_rationale,
-                Snackbar.LENGTH_LONG
-            )
-                .setAction(R.string.ok) {
-                    // Request permission
-                    ActivityCompat.requestPermissions(
-                        this@MainActivity,
-                        arrayOf(Manifest.permission.ACCESS_FINE_LOCATION),
-                        REQUEST_FOREGROUND_ONLY_PERMISSIONS_REQUEST_CODE
-                    )
+    private fun initPermission() {
+        // https://developer.android.com/training/permissions/requesting#manage-request-code-yourself
+        // https://developer.android.com/training/location/permissions
+        val locationPermissionRequest = registerForActivityResult(
+            ActivityResultContracts.RequestMultiplePermissions()
+        ) { permissions ->
+            when {
+                permissions.getOrDefault(Manifest.permission.ACCESS_FINE_LOCATION, false) -> {
+                    // Precise location access granted.
+                    Log.d(TAG, "Precise location granted")
+                    hasPermission = true
                 }
-                .show()
-        } else {
-            Log.d(TAG, "Request foreground only permission")
-            ActivityCompat.requestPermissions(
-                this@MainActivity,
-                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION),
-                REQUEST_FOREGROUND_ONLY_PERMISSIONS_REQUEST_CODE
-            )
-        }
-    }
-
-    // TODO: Step 1.0, Review Permissions: Handles permission result.
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<String>,
-        grantResults: IntArray
-    ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        Log.d(TAG, "onRequestPermissionResult")
-
-        when (requestCode) {
-            REQUEST_FOREGROUND_ONLY_PERMISSIONS_REQUEST_CODE -> when {
-                grantResults.isEmpty() ->
-                    // If user interaction was interrupted, the permission request
-                    // is cancelled and you receive empty arrays.
-                    Log.d(TAG, "User interaction was cancelled.")
-                grantResults[0] == PackageManager.PERMISSION_GRANTED ->
-                    // Permission was granted.
-                    foregroundOnlyLocationService?.subscribeToLocationUpdates()
+                permissions.getOrDefault(Manifest.permission.ACCESS_COARSE_LOCATION, false) -> {
+                    // Only approximate location access granted.
+                    Log.d(TAG, "approximate location granted")
+                    hasPermission = true
+                }
                 else -> {
-                    // Permission denied.
-                    updateButtonState(false)
-
-                    Snackbar.make(
-                        findViewById(R.id.activity_main),
-                        R.string.permission_denied_explanation,
-                        Snackbar.LENGTH_LONG
-                    )
-                        .setAction(R.string.settings) {
-                            // Build intent that displays the App settings screen.
-                            val intent = Intent()
-                            intent.action = Settings.ACTION_APPLICATION_DETAILS_SETTINGS
-                            val uri = Uri.fromParts(
-                                "package",
-                                BuildConfig.APPLICATION_ID,
-                                null
-                            )
-                            intent.data = uri
-                            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                            startActivity(intent)
-                        }
-                        .show()
+                    // No location access granted.
+                    showSettingSnackbar()
                 }
             }
         }
-    }
 
-    private fun updateButtonState(trackingLocation: Boolean) {
-        if (trackingLocation) {
-            foregroundOnlyLocationButton.text = getString(R.string.stop_location_updates_button_text)
-        } else {
-            foregroundOnlyLocationButton.text = getString(R.string.start_location_updates_button_text)
+        when {
+            permissionApproved() -> {
+                // Every permissions is already granted
+                Log.d(TAG, "All permissions are granted")
+                hasPermission = true
+            }
+            shouldShowRequestPermissionRationale(Manifest.permission.ACCESS_COARSE_LOCATION) -> {
+                showSettingSnackbar()
+            }
+            else -> locationPermissionRequest.launch(permissions)
         }
     }
 
-    private fun logResultsToScreen(output: String) {
-        val outputWithPreviousLogs = "$output\n${outputTextView.text}"
-        outputTextView.text = outputWithPreviousLogs
+    private fun showSettingSnackbar() {
+        Snackbar.make(
+            this.findViewById(android.R.id.content),
+            R.string.permission_rationale,
+            Snackbar.LENGTH_LONG
+        )
+            .setAction(R.string.settings) {
+                // Build intent that displays the App settings screen.
+                val intent = Intent()
+                intent.action = Settings.ACTION_APPLICATION_DETAILS_SETTINGS
+                val uri = Uri.fromParts(
+                    "package",
+                    BuildConfig.APPLICATION_ID,
+                    null
+                )
+                intent.data = uri
+                intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                startActivity(intent)
+            }
+            .show()
     }
 
-    /**
-     * Receiver for location broadcasts from [ForegroundOnlyLocationService].
-     */
-    private inner class ForegroundOnlyBroadcastReceiver : BroadcastReceiver() {
-
-        override fun onReceive(context: Context, intent: Intent) {
-            val location = intent.getParcelableExtra<Location>(
-                ForegroundOnlyLocationService.EXTRA_LOCATION
-            )
-
-            if (location != null) {
-                logResultsToScreen("Foreground location: ${location.toText()}")
-            }
+    private fun permissionApproved(): Boolean {
+        return permissions.any { permission ->
+            ActivityCompat.checkSelfPermission(
+                this,
+                permission
+            ) == PackageManager.PERMISSION_GRANTED
         }
     }
 }
